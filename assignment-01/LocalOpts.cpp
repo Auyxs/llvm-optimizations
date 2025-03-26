@@ -2,49 +2,47 @@
 using namespace llvm;
 
 PreservedAnalyses LocalOpts::run(Module &M, ModuleAnalysisManager &AM) {
-  bool modified = false;
+  bool moduleChanged = false;
 
   for (Function &F : M)   
-    modified |= runOnFunction(F);
+    moduleChanged |= runOnFunction(F);
 
-  return modified ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  return moduleChanged ? PreservedAnalyses::none() : PreservedAnalyses::all();
 }
 
 bool LocalOpts::runOnFunction(Function &F) {
   errs() << "\nRunning on function: " << F.getName() << "\n";
-  bool Transformed = false;
+  bool functionChanged = false;
 
   for (auto &BB : F)
-    Transformed |= runOnBasicBlock(BB);
+    functionChanged |= runOnBasicBlock(BB);
 
-  return Transformed;
+  return functionChanged;
 }
 
 bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
-  bool globallyModified = false;
+  bool blockChanged = false;
   std::set<Instruction*> toBeErased;
 
   for (auto &I : B) {
-    bool locallyModified = 
-      AlgebraicIdentityOpt(I) ||
-      StrengthReductionOpt(I) ||
-      MultiInstructionOpt(I);
+    bool instructionChanged = AlgebraicIdentityOpt(I) || StrengthReductionOpt(I); 
+    // MultiInstructionOpt(I);
 
-    if (locallyModified) 
+    if (instructionChanged) 
       toBeErased.insert(&I);
-    globallyModified |= locallyModified;
+
+    blockChanged |= instructionChanged;
   }
 
-  if (globallyModified)
-    for (auto *I : toBeErased) 
-      I->eraseFromParent();
+  for (auto *I : toBeErased) 
+    I->eraseFromParent();
 
-  errs() << (globallyModified ? "IR modified" : "Nothing modified") << "\n";
-  return globallyModified;
+  errs() << (blockChanged ? "IR modified" : "Nothing modified") << "\n";
+  return blockChanged;
 }
 
 bool LocalOpts::AlgebraicIdentityOpt(Instruction &I) {
-    return false;
+  return false
 }
 
 bool LocalOpts::StrengthReductionOpt(Instruction &I) {
