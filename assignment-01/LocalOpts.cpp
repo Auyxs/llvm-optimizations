@@ -42,15 +42,46 @@ bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
 }
 
 bool LocalOpts::AlgebraicIdentityOpt(Instruction &I) {
-  return false
+  if (!I.isBinaryOp()) return false;
+
+  // opcode -> {neutral constant value, isCommutative}
+  const std::unordered_map<unsigned, std::pair<unsigned, bool>> operations = {
+    {Instruction::Add, {0, true}}, 
+    {Instruction::Mul, {1, true}},   
+    {Instruction::Sub, {0, false}}, 
+    {Instruction::SDiv, {1, false}},
+    {Instruction::UDiv, {1, false}},
+  };
+
+  auto opCode = I.getOpcode();
+  auto pair = operations.find(opCode);
+  if (pair == operations.end()) return false; // exit if operation not supported
+
+  auto [neutralValue, isCommutative] = pair->second;
+  Value *LHS = I.getOperand(0);
+  Value *RHS = I.getOperand(1);
+
+  auto isNeutral = [neutralValue](Value *Op) -> bool {
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(Op))
+      return CI->getValue() == neutralValue;
+    return false;
+  };
+
+  // Normalize commutative operations by moving the neutral constant to RHS
+  if (isCommutative && isNeutral(LHS)) std::swap(LHS, RHS);
+  if (!isNeutral(RHS)) return false;
+
+  errs() << "Applying algebraic identity: " << I << " -> " << *LHS << "\n";
+  I.replaceAllUsesWith(LHS);
+  return true;
 }
 
 bool LocalOpts::StrengthReductionOpt(Instruction &I) {
-    return false;
+  return false;
 }
 
 bool LocalOpts::MultiInstructionOpt(Instruction &I) {
-    return false;
+  return false;
 }
 
 PassPluginLibraryInfo getLocalOptPluginInfo() {
