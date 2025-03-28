@@ -60,7 +60,8 @@ bool LocalOpts::AlgebraicIdentityOpt(Instruction &I) {
   auto pair = operations.find(opCode);
   if (pair == operations.end()) return false; // exit if operation not supported
 
-  auto [neutralValue, isCommutative] = pair->second;
+  auto neutralValue = pair->second.first; 
+  auto isCommutative = pair->second.second;
   Value *LHS = I.getOperand(0);
   Value *RHS = I.getOperand(1);
 
