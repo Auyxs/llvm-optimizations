@@ -23,7 +23,8 @@ class LocalOpts : public PassInfoMixin<LocalOpts> {
         static bool runOnBasicBlock(BasicBlock &B);
         static bool AlgebraicIdentityOpt(Instruction &I);
         static bool StrengthReductionOpt(Instruction &I);
-        static bool MultiInstructionOpt(Instruction &I);
+        static bool AdvancedMulSROpt(Instruction &I);
+        static bool MultiInstructionOpt(BasicBlock &B);
     };
 }
 

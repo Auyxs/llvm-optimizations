@@ -15,7 +15,9 @@ bool LocalOpts::runOnFunction(Function &F) {
   bool functionChanged = false;
 
   for (auto &BB : F)
-    functionChanged |= runOnBasicBlock(BB);
+    functionChanged |= 
+      runOnBasicBlock(BB) || 
+      MultiInstructionOpt(BB);
 
   return functionChanged;
 }
@@ -25,9 +27,12 @@ bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
   std::set<Instruction*> toBeErased;
 
   for (auto &I : B) {
-    bool instructionChanged = AlgebraicIdentityOpt(I) || StrengthReductionOpt(I); 
-    // MultiInstructionOpt(I);
-
+    bool instructionChanged = 
+      I.isBinaryOp() &&
+      AlgebraicIdentityOpt(I) || 
+      StrengthReductionOpt(I) ||
+      AdvancedMulSROpt(I); 
+    
     if (instructionChanged) 
       toBeErased.insert(&I);
 
@@ -42,8 +47,6 @@ bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
 }
 
 bool LocalOpts::AlgebraicIdentityOpt(Instruction &I) {
-  if (!I.isBinaryOp()) return false;
-
   // opcode -> {neutral constant value, isCommutative}
   const std::unordered_map<unsigned, std::pair<unsigned, bool>> operations = {
     {Instruction::Add, {0, true}}, 
@@ -77,10 +80,46 @@ bool LocalOpts::AlgebraicIdentityOpt(Instruction &I) {
 }
 
 bool LocalOpts::StrengthReductionOpt(Instruction &I) {
+  // opcode -> shift operation
+  const std::unordered_map<unsigned, Instruction::BinaryOps> operations = {
+    {Instruction::Mul, Instruction::Shl},
+    {Instruction::UDiv, Instruction::LShr},
+    {Instruction::SDiv, Instruction::AShr}
+  };
+
+  auto opCode = I.getOpcode();
+  auto pair = operations.find(opCode);
+  if (pair == operations.end()) return false; // exit if operation not supported
+
+  auto ShiftOp = pair->second;
+  Value *LHS = I.getOperand(0);
+  Value *RHS = I.getOperand(1);
+
+  auto isPowerOfTwo = [](Value *op) {
+    if (auto *CI = dyn_cast<ConstantInt>(op)) 
+      return CI->getValue().isPowerOf2();
+    return false;
+  };
+
+  // Normalize commutative operations by moving the neutral constant to RHS
+  if (opCode == Instruction::Mul && isPowerOfTwo(LHS)) std::swap(LHS, RHS); 
+  if (!isPowerOfTwo(RHS)) return false;
+
+  auto *CI = dyn_cast<ConstantInt>(RHS); 
+  unsigned ShiftValue = CI->getValue().logBase2();
+  auto *ShiftInstr = BinaryOperator::Create(ShiftOp, LHS, ConstantInt::get(CI->getType(), ShiftValue));
+
+  errs() << "Strength reduction: " << I << "\n";
+  ShiftInstr->insertBefore(&I);
+  I.replaceAllUsesWith(ShiftInstr);
+  return true;
+}
+
+bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
   return false;
 }
 
-bool LocalOpts::MultiInstructionOpt(Instruction &I) {
+bool LocalOpts::MultiInstructionOpt(BasicBlock &B) {
   return false;
 }
 
