@@ -7,6 +7,7 @@ PreservedAnalyses LocalOpts::run(Module &M, ModuleAnalysisManager &AM) {
   for (Function &F : M)   
     moduleChanged |= runOnFunction(F);
 
+  errs() << (moduleChanged ? "IR modified" : "Nothing modified") << "\n";
   return moduleChanged ? PreservedAnalyses::none() : PreservedAnalyses::all();
 }
 
@@ -42,7 +43,6 @@ bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
   for (auto *I : toBeErased) 
     I->eraseFromParent();
 
-  errs() << (blockChanged ? "IR modified" : "Nothing modified") << "\n";
   return blockChanged;
 }
 
@@ -75,7 +75,7 @@ bool LocalOpts::AlgebraicIdentityOpt(Instruction &I) {
   if (isCommutative && isNeutral(LHS)) std::swap(LHS, RHS);
   if (!isNeutral(RHS)) return false;
 
-  errs() << "Applying algebraic identity: " << I << " -> " << *LHS << "\n";
+  errs() << "Algebraic Identity: " << I << "\n";
   I.replaceAllUsesWith(LHS);
   return true;
 }
@@ -96,28 +96,60 @@ bool LocalOpts::StrengthReductionOpt(Instruction &I) {
   Value *LHS = I.getOperand(0);
   Value *RHS = I.getOperand(1);
 
-  auto isPowerOfTwo = [](Value *op) {
+  auto isConstPowOf2 = [](Value *op) {
     if (auto *CI = dyn_cast<ConstantInt>(op)) 
       return CI->getValue().isPowerOf2();
     return false;
   };
 
   // Normalize commutative operations by moving the neutral constant to RHS
-  if (opCode == Instruction::Mul && isPowerOfTwo(LHS)) std::swap(LHS, RHS); 
-  if (!isPowerOfTwo(RHS)) return false;
+  if (opCode == Instruction::Mul && isConstPowOf2(LHS)) std::swap(LHS, RHS); 
+  if (!isConstPowOf2(RHS)) return false;
 
   auto *CI = dyn_cast<ConstantInt>(RHS); 
   unsigned ShiftValue = CI->getValue().logBase2();
   auto *ShiftInstr = BinaryOperator::Create(ShiftOp, LHS, ConstantInt::get(CI->getType(), ShiftValue));
 
-  errs() << "Strength reduction: " << I << "\n";
+  errs() << "Strength Reduction: " << I << "\n";
   ShiftInstr->insertBefore(&I);
   I.replaceAllUsesWith(ShiftInstr);
   return true;
 }
 
 bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
-  return false;
+  auto opCode = I.getOpcode();
+  if (opCode != Instruction::Mul) return false; 
+
+  Value *LHS = I.getOperand(0);
+  Value *RHS = I.getOperand(1);
+
+  // ensure the neutral constant is on RHS
+  ConstantInt *CI = dyn_cast<ConstantInt>(LHS);
+  if (CI) std::swap(LHS, RHS);
+  CI = dyn_cast<ConstantInt>(RHS);
+  if (!CI || CI->getValue().isZero()) return false; 
+
+  Instruction::BinaryOps adjustOp;
+  unsigned ShiftValue;
+
+  if ((CI->getValue()+1).isPowerOf2()) {
+    adjustOp = Instruction::Sub;
+    ShiftValue = (CI->getValue()+1).logBase2();
+  }
+
+  if ((CI->getValue()-1).isPowerOf2()) {
+    adjustOp = Instruction::Add;
+    ShiftValue = (CI->getValue()-1).logBase2();
+  } 
+
+  auto *ShiftInstr = BinaryOperator::Create(Instruction::Mul, LHS, ConstantInt::get(CI->getType(), ShiftValue));
+  auto *AdjustInstr = BinaryOperator::Create(adjustOp, ShiftInstr, LHS);
+
+  errs() << "Adv Strength Reduction: " << I << "\n";
+  ShiftInstr->insertBefore(&I);
+  AdjustInstr->insertAfter(ShiftInstr);
+  I.replaceAllUsesWith(AdjustInstr);
+  return true;
 }
 
 bool LocalOpts::MultiInstructionOpt(BasicBlock &B) {
