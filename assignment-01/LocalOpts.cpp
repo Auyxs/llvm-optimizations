@@ -16,9 +16,7 @@ bool LocalOpts::runOnFunction(Function &F) {
   bool functionChanged = false;
 
   for (auto &BB : F)
-    functionChanged |= 
-      runOnBasicBlock(BB) || 
-      MultiInstructionOpt(BB);
+    functionChanged |= runOnBasicBlock(BB);
 
   return functionChanged;
 }
@@ -31,9 +29,10 @@ bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
     bool instructionChanged = 
       I.isBinaryOp() &&
       AlgebraicIdentityOpt(I) || 
+      MultiInstructionOpt(I) ||
       StrengthReductionOpt(I) ||
-      AdvancedMulSROpt(I); 
-    
+      AdvancedMulSROpt(I);
+
     if (instructionChanged) 
       toBeErased.insert(&I);
 
@@ -122,12 +121,11 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
 
   Value *LHS = I.getOperand(0);
   Value *RHS = I.getOperand(1);
-
+  ConstantInt *CI = nullptr;
+  
   // ensure the neutral constant is on RHS
-  ConstantInt *CI = dyn_cast<ConstantInt>(LHS);
-  if (CI) std::swap(LHS, RHS);
-  CI = dyn_cast<ConstantInt>(RHS);
-  if (!CI || CI->getValue().isZero()) return false; 
+  if ((CI = dyn_cast<ConstantInt>(LHS))) std::swap(LHS, RHS);
+  if (!(CI = dyn_cast<ConstantInt>(RHS)) || CI->getValue().isZero()) return false; 
 
   Instruction::BinaryOps adjustOp;
   unsigned ShiftValue;
@@ -142,7 +140,7 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
     ShiftValue = (CI->getValue()-1).logBase2();
   } 
 
-  auto *ShiftInstr = BinaryOperator::Create(Instruction::Mul, LHS, ConstantInt::get(CI->getType(), ShiftValue));
+  auto *ShiftInstr = BinaryOperator::Create(Instruction::Shl, LHS, ConstantInt::get(CI->getType(), ShiftValue));
   auto *AdjustInstr = BinaryOperator::Create(adjustOp, ShiftInstr, LHS);
 
   errs() << "Adv Strength Reduction: " << I << "\n";
@@ -152,7 +150,7 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
   return true;
 }
 
-bool LocalOpts::MultiInstructionOpt(BasicBlock &B) {
+bool LocalOpts::MultiInstructionOpt(Instruction &I) {
   return false;
 }
 
