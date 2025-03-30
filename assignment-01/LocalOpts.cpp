@@ -165,30 +165,32 @@ bool LocalOpts::MultiInstructionOpt(Instruction &I) {
   if (pair == operations.end()) return false; // exit if operation not supported
 
   auto InverseOp = pair->second;
-  Value *LHS = I.getOperand(0);
-  Value *RHS = I.getOperand(1);
-  ConstantInt *CI = nullptr;
-  
-  // ensure the neutral constant is on RHS
-  if (opCode == Instruction::Add && (CI = dyn_cast<ConstantInt>(LHS))) std::swap(LHS, RHS);
-  if (!(CI = dyn_cast<ConstantInt>(RHS))) return false; 
+
+  auto getOperands = [](Instruction &I) -> std::pair<Value*, ConstantInt*> {
+    Value *LHS = I.getOperand(0);
+    Value *RHS = I.getOperand(1);
+    ConstantInt *CI = nullptr;
+
+    // ensure the neutral constant is on RHS
+    if (I.getOpcode() == Instruction::Add && (CI = dyn_cast<ConstantInt>(LHS))) std::swap(LHS, RHS);
+    CI = dyn_cast<ConstantInt>(RHS);
+
+    return {LHS, CI};
+  }; 
+
+  auto operandsPair1 = getOperands(I);
 
   // get used instruction
-  auto *UsedInstr = dyn_cast<Instruction>(LHS);
+  auto *UsedInstr = dyn_cast<Instruction>(operandsPair1.first);
   if (!UsedInstr) return false;
 
+  auto operandsPair2 = getOperands(*UsedInstr);
   auto opCode2 = UsedInstr->getOpcode();
 
-  Value *LHS2 = UsedInstr->getOperand(0);
-  Value *RHS2 = UsedInstr->getOperand(1);
-  ConstantInt *CI2 = nullptr;
-
-  if (opCode2 == Instruction::Add && (CI2 = dyn_cast<ConstantInt>(LHS2))) std::swap(LHS2, RHS2);
-  if (!(CI2 = dyn_cast<ConstantInt>(RHS2))) return false; 
-  if (opCode2 != InverseOp || CI2 != CI) return false;
+  if (opCode2 != InverseOp || operandsPair2.second != operandsPair1.second) return false;
 
   errs() << "Multi Instruction: " << I << "\n";
-  I.replaceAllUsesWith(LHS2);
+  I.replaceAllUsesWith(operandsPair2.first);
   return true;
 }
 
