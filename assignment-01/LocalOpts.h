@@ -25,6 +25,7 @@ class LocalOpts : public PassInfoMixin<LocalOpts> {
         static bool StrengthReductionOpt(Instruction &I);
         static bool AdvancedMulSROpt(Instruction &I);
         static bool MultiInstructionOpt(Instruction &I);
+        static bool SubMultiInstrOpt(Instruction &I);
     };
 }
 

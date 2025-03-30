@@ -30,6 +30,7 @@ bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
       I.isBinaryOp() &&
       AlgebraicIdentityOpt(I) || 
       MultiInstructionOpt(I) ||
+      SubMultiInstrOpt(I) ||
       StrengthReductionOpt(I) ||
       AdvancedMulSROpt(I);
 
@@ -140,6 +141,8 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
     ShiftValue = (CI->getValue()-1).logBase2();
   } 
 
+  if (!adjustOp) return false;
+
   auto *ShiftInstr = BinaryOperator::Create(Instruction::Shl, LHS, ConstantInt::get(CI->getType(), ShiftValue));
   auto *AdjustInstr = BinaryOperator::Create(adjustOp, ShiftInstr, LHS);
 
@@ -151,7 +154,71 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
 }
 
 bool LocalOpts::MultiInstructionOpt(Instruction &I) {
-  return false;
+  // opcode -> opposite operation
+  const std::unordered_map<unsigned, Instruction::BinaryOps> operations = {
+    {Instruction::Add, Instruction::Sub},
+    {Instruction::Sub, Instruction::Add},
+  };
+
+  auto opCode = I.getOpcode();
+  auto pair = operations.find(opCode);
+  if (pair == operations.end()) return false; // exit if operation not supported
+
+  auto InverseOp = pair->second;
+  Value *LHS = I.getOperand(0);
+  Value *RHS = I.getOperand(1);
+  ConstantInt *CI = nullptr;
+  
+  // ensure the neutral constant is on RHS
+  if (opCode == Instruction::Add && (CI = dyn_cast<ConstantInt>(LHS))) std::swap(LHS, RHS);
+  if (!(CI = dyn_cast<ConstantInt>(RHS))) return false; 
+
+  // get used instruction
+  auto *UsedInstr = dyn_cast<Instruction>(LHS);
+  if (!UsedInstr) return false;
+
+  auto opCode2 = UsedInstr->getOpcode();
+
+  Value *LHS2 = UsedInstr->getOperand(0);
+  Value *RHS2 = UsedInstr->getOperand(1);
+  ConstantInt *CI2 = nullptr;
+
+  if (opCode2 == Instruction::Add && (CI2 = dyn_cast<ConstantInt>(LHS2))) std::swap(LHS2, RHS2);
+  if (!(CI2 = dyn_cast<ConstantInt>(RHS2))) return false; 
+  if (opCode2 != InverseOp || CI2 != CI) return false;
+
+  errs() << "Multi Instruction: " << I << "\n";
+  I.replaceAllUsesWith(LHS2);
+  return true;
+}
+
+// a = 1 - b
+// c = 1 - a 
+bool LocalOpts::SubMultiInstrOpt(Instruction &I){
+  auto opCode = I.getOpcode();
+  if (opCode != Instruction::Sub) return false; 
+
+  Value *LHS = I.getOperand(0);
+  Value *RHS = I.getOperand(1);
+  ConstantInt *CI = nullptr;
+  Instruction *UsedInstr = nullptr;
+
+  if (!(CI = dyn_cast<ConstantInt>(LHS))) return false;
+  if (!(UsedInstr = dyn_cast<Instruction>(RHS))) return false;
+
+  auto opCode2 = UsedInstr->getOpcode();
+  if (opCode2 != Instruction::Sub) return false; 
+
+  Value *LHS2 = UsedInstr->getOperand(0);
+  Value *RHS2 = UsedInstr->getOperand(1);
+  ConstantInt *CI2 = nullptr;
+
+  if (!(CI2 = dyn_cast<ConstantInt>(LHS2))) return false;
+  if (CI != CI2) return false;
+
+  errs() << "Multi Instruction Sub: " << I << "\n";
+  I.replaceAllUsesWith(RHS2);
+  return true;
 }
 
 PassPluginLibraryInfo getLocalOptPluginInfo() {
