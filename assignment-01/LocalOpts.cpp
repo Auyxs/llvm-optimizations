@@ -131,18 +131,21 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
 
   Instruction::BinaryOps adjustOp;
   unsigned ShiftValue;
+  bool isValid = false;
 
   if ((CI->getValue()+1).isPowerOf2()) {
     adjustOp = Instruction::Sub;
     ShiftValue = (CI->getValue()+1).logBase2();
+    isValid = true;
   }
 
   if ((CI->getValue()-1).isPowerOf2()) {
     adjustOp = Instruction::Add;
     ShiftValue = (CI->getValue()-1).logBase2();
+    isValid = true;
   } 
 
-  if (!adjustOp) return false;
+  if (!isValid) return false;
 
   auto *ShiftInstr = BinaryOperator::Create(Instruction::Shl, LHS, ConstantInt::get(CI->getType(), ShiftValue));
   auto *AdjustInstr = BinaryOperator::Create(adjustOp, ShiftInstr, LHS);
