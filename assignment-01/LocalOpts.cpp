@@ -58,7 +58,7 @@ bool LocalOpts::AlgebraicIdentityOpt(Instruction &I) {
 
   auto opCode = I.getOpcode();
   auto pair = operations.find(opCode);
-  if (pair == operations.end()) return false; // exit if operation not supported
+  if (pair == operations.end()) return false; // Unsupported operation
 
   auto neutralValue = pair->second.first; 
   auto isCommutative = pair->second.second;
@@ -90,7 +90,7 @@ bool LocalOpts::StrengthReductionOpt(Instruction &I) {
 
   auto opCode = I.getOpcode();
   auto pair = operations.find(opCode);
-  if (pair == operations.end()) return false; // exit if operation not supported
+  if (pair == operations.end()) return false; // Unsupported operation
 
   auto ShiftOp = pair->second;
   Value *LHS = I.getOperand(0);
@@ -102,7 +102,7 @@ bool LocalOpts::StrengthReductionOpt(Instruction &I) {
     return false;
   };
 
-  // Normalize commutative operations by moving the neutral constant to RHS
+  // Normalize commutative operations by moving the constant to RHS
   if (opCode == Instruction::Mul && isConstPowOf2(LHS)) std::swap(LHS, RHS); 
   if (!isConstPowOf2(RHS)) return false;
 
@@ -116,6 +116,7 @@ bool LocalOpts::StrengthReductionOpt(Instruction &I) {
   return true;
 }
 
+// Handles advSR x * 15 → (x << 4) - x.
 bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
   auto opCode = I.getOpcode();
   if (opCode != Instruction::Mul) return false; 
@@ -124,7 +125,7 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
   Value *RHS = I.getOperand(1);
   ConstantInt *CI = nullptr;
   
-  // ensure the neutral constant is on RHS
+  // Ensure the constant is on RHS
   if ((CI = dyn_cast<ConstantInt>(LHS))) std::swap(LHS, RHS);
   if (!(CI = dyn_cast<ConstantInt>(RHS)) || CI->getValue().isZero()) return false; 
 
@@ -162,16 +163,16 @@ bool LocalOpts::MultiInstructionOpt(Instruction &I) {
 
   auto opCode = I.getOpcode();
   auto pair = operations.find(opCode);
-  if (pair == operations.end()) return false; // exit if operation not supported
+  if (pair == operations.end()) return false; // Unsupported operation
 
   auto InverseOp = pair->second;
 
+  // Extract operands and normalize constants to RHS
   auto getOperands = [](Instruction &I) -> std::pair<Value*, ConstantInt*> {
     Value *LHS = I.getOperand(0);
     Value *RHS = I.getOperand(1);
     ConstantInt *CI = nullptr;
 
-    // ensure the neutral constant is on RHS
     if (I.getOpcode() == Instruction::Add && (CI = dyn_cast<ConstantInt>(LHS))) std::swap(LHS, RHS);
     CI = dyn_cast<ConstantInt>(RHS);
 
@@ -179,10 +180,8 @@ bool LocalOpts::MultiInstructionOpt(Instruction &I) {
   }; 
 
   auto operandsPair1 = getOperands(I);
-
-  // get used instruction
   auto *UsedInstr = dyn_cast<Instruction>(operandsPair1.first);
-  if (!UsedInstr) return false;
+  if (!UsedInstr || !UsedInstr->isBinaryOp()) return false;
 
   auto operandsPair2 = getOperands(*UsedInstr);
   auto opCode2 = UsedInstr->getOpcode();
@@ -194,8 +193,7 @@ bool LocalOpts::MultiInstructionOpt(Instruction &I) {
   return true;
 }
 
-// a = 1 - b
-// c = 1 - a 
+// Subtraction-based multi-instr patterns, e.g., a = 1 - b, c = 1 - a → c = b.
 bool LocalOpts::SubMultiInstrOpt(Instruction &I){
   auto opCode = I.getOpcode();
   if (opCode != Instruction::Sub) return false; 
