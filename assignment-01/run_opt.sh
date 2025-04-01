@@ -24,11 +24,11 @@ for file in "$CPP_DIR"/*.cpp; do
 
     # Generate non-optimized IR
     clang -S -emit-llvm -Xclang -disable-O0-optnone -O0 "$file" -o "$BC_DIR/$BASENAME.mem.bc"
-    opt -mem2reg "$BC_DIR/$BASENAME.mem.bc" -o "$BC_DIR/$BASENAME.bc"
+    opt -p mem2reg "$BC_DIR/$BASENAME.mem.bc" -o "$BC_DIR/$BASENAME.bc"
     llvm-dis "$BC_DIR/$BASENAME.bc" -o "$LL_DIR/$BASENAME.ll"
 
     # Optimize IR using the custom pass
-    opt -load-pass-plugin "$OPT_PLUGIN" -passes="$OPT_PASS" "$LL_DIR/$BASENAME.ll" -o "$BC_DIR/$BASENAME.opt.bc"
+    opt -load-pass-plugin "$OPT_PLUGIN" -p "$OPT_PASS" "$LL_DIR/$BASENAME.ll" -o "$BC_DIR/$BASENAME.opt.bc"
     llvm-dis "$BC_DIR/$BASENAME.opt.bc" -o "$LL_OPT_DIR/$BASENAME.opt.ll"
 
     echo "Completed: $BASENAME"
