@@ -5,7 +5,7 @@
 
 Repository containing Compilers Course assignments at **Unimore (2024/2025)** - Implementation of **LLVM IR** optimization passes as plugins.
 
-## 📌 First Assignment 
+## 📂 First Assignment 
 
 1. **Algebraic Identity**
     - `x + 0` → `x`
@@ -18,9 +18,9 @@ Repository containing Compilers Course assignments at **Unimore (2024/2025)** - 
 3. **Multi-Instruction Optimization**
     - `𝑎 = 𝑏 + 1, 𝑐 = 𝑎 − 1` → `𝑎 = 𝑏 + 1, 𝑐 = b`
 
-## Usage
+### Usage
 
-### 🔧 Build
+#### 🔧 Build
 To build the LLVM plugin, follow these steps:
 ```bash
 mkdir -p build
@@ -31,7 +31,7 @@ make
 The plugin (`libLocalOpts.so`) will be generated in the build directory.
 > Note : Ensure that $LLVM_DIR is correctly set to your LLVM installation path. 
 > (e.g., /usr/lib/llvm-19/bin on Linux)
-### ▶️ Run Optimization Pass
+#### ▶️ Run Optimization Pass
 Once the plugin is built, you can run the optimization script to test the implemented passes:
 1. Place your `.cpp` test files in the `test/cpp` directory.
 2. Before running the script, set the `OPT_PLUGIN_PATH` environment variable:
@@ -43,6 +43,12 @@ export OPT_PLUGIN_PATH=/path/to/libLocalOpts.so
 chmod +x run_opt.sh
 ./run_opt.sh
 ```
+## 📂 Second Assignment - Dataflow Analysis
+> Note: no code implementation required
+1. **Very Busy Expressions**
+2. **Dominator Analysis**
+3. **Constant Propagation**
+
 ## Contributors
 - Aurora Lin
 - Eleonora Muzzi
