@@ -17,8 +17,9 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/Dominators.h"
-
+#include "llvm/Transforms/Utils/Local.h"
 namespace llvm {
 
 class LoopFusionOpt : public PassInfoMixin<LoopFusionOpt> {
