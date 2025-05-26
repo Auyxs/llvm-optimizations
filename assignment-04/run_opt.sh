@@ -22,13 +22,19 @@ for file in "$CPP_DIR"/*.cpp; do
 
     BASENAME=$(basename "$file" .cpp)
 
-    # Generate non-optimized IR
+    # Generate initial LLVM IR (.bc)
     clang -S -emit-llvm -Xclang -disable-O0-optnone -O0 "$file" -o "$BC_DIR/$BASENAME.mem.bc"
-    opt -p mem2reg "$BC_DIR/$BASENAME.mem.bc" -o "$BC_DIR/$BASENAME.bc"
+    opt -passes=mem2reg "$BC_DIR/$BASENAME.mem.bc" -o "$BC_DIR/$BASENAME.bc"
     llvm-dis "$BC_DIR/$BASENAME.bc" -o "$LL_DIR/$BASENAME.ll"
+    # Apply standard loop passes and emit intermediate LL (human-readable)
+    opt -passes="loop-simplify,loop-rotate" "$BC_DIR/$BASENAME.bc" -o "$BC_DIR/$BASENAME.pre.bc"
+    llvm-dis "$BC_DIR/$BASENAME.pre.bc" -o "$LL_DIR/$BASENAME.pre.ll"
 
-    # Optimize IR using the custom pass
-    opt -load-pass-plugin "$OPT_PLUGIN" -p "$OPT_PASS" "$LL_DIR/$BASENAME.ll" -o "$BC_DIR/$BASENAME.opt.bc"
+    # Apply custom pass to the preprocessed IR
+    opt -load-pass-plugin "$OPT_PLUGIN" \
+        -passes="$OPT_PASS" \
+        "$BC_DIR/$BASENAME.pre.bc" -o "$BC_DIR/$BASENAME.opt.bc"
+
     llvm-dis "$BC_DIR/$BASENAME.opt.bc" -o "$LL_OPT_DIR/$BASENAME.opt.ll"
 
     echo "Completed: $BASENAME"

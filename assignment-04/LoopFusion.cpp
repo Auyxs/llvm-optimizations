@@ -140,18 +140,74 @@ SetVector<Instruction*> getBodyInstructions(Loop *L){
 
 bool LoopFusionOpt::isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr){
   auto isAdjacent = [&]() -> bool {
-    return true;
-  };
+    auto prevExitBB = prev->isGuarded() ? 
+        prev->getExitBlock()->getSingleSuccessor()  
+        : prev->getExitBlock();
+
+    if (not prevExitBB) return false; 
+
+    auto nextEntryBB = curr->isGuarded() ?
+        curr->getLoopGuardBranch()->getParent()
+        : curr->getLoopPreheader();;
+
+    return prevExitBB == nextEntryBB;
+};
 
   auto hasSameLoopTripCount = [&]() -> bool {
-    return true;
+    ScalarEvolution &SE = FAM.getResult<ScalarEvolutionAnalysis>(F);
+    const SCEV *TripCountPrev = SE.getBackedgeTakenCount(prev);
+    const SCEV *TripCountCurr = SE.getBackedgeTakenCount(curr);
+
+    if (isa<SCEVCouldNotCompute>(TripCountPrev) || 
+        isa<SCEVCouldNotCompute>(TripCountCurr))
+        return false;
+    
+    return TripCountCurr == TripCountPrev;
   };
 
   auto isControlFlowEq = [&]() -> bool {
-    return true;
+    DominatorTree &DT = FAM.getResult<DominatorTreeAnalysis>(F);
+    PostDominatorTree &PDT = FAM.getResult<PostDominatorTreeAnalysis>(F);
+
+    BasicBlock *H0 = prev->getLoopPreheader();
+    BasicBlock *H1 = curr->getLoopPreheader();
+
+    // If both loops are guarded, check if their guard conditions are the same
+    bool condEq = true;
+    if (prev->isGuarded() && curr->isGuarded()) {
+      BranchInst *guardBranch0 = prev->getLoopGuardBranch();
+      BranchInst *guardBranch1 = curr->getLoopGuardBranch();
+
+      H0 = guardBranch0->getParent();
+      H1 = guardBranch1->getParent();
+
+      if (guardBranch0->isConditional() && guardBranch1->isConditional()) {
+        if (auto *icmp0 = dyn_cast<ICmpInst>(guardBranch0->getCondition())) {
+          if (auto *icmp1 = dyn_cast<ICmpInst>(guardBranch1->getCondition())) {
+            condEq = icmp0->isIdenticalTo(icmp1);
+          }
+        }
+      }
+    }
+
+    return DT.dominates(H0, H1) && PDT.dominates(H1, H0) && condEq;
   };
 
   auto hasNotDependencies = [&]() -> bool {
+    // auto &DI = FAM.getResult<DependenceAnalysis>(F);
+
+    // for (auto *BB : prev->getBlocks()) {
+    //   for (auto &I : *BB) {
+    //     for (auto *BB2 : curr->getBlocks()) {
+    //       for (auto &I2 : *BB2) {
+    //         if (DI.depends(&I, &I2, true)) {
+    //           errs() << "Dependency " << I << I2 << "\n";
+    //           return false;
+    //         }
+    //       }
+    //     }
+    //   }
+    // }
     return true;
   };
 
