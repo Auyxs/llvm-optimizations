@@ -22,120 +22,150 @@ bool LoopFusionOpt::runOnLoops(Function &F, FunctionAnalysisManager &FAM, const 
     
     if (prev && isOptimizable(F, FAM, prev, curr)) {
         outs() << "\noptimizable loops: " << prev << " " << curr << "\n";
-        prev = optimizeLoop(F, FAM, prev, curr);
+        prev = fuseLoops(F, FAM, prev, curr);
         changed = true;
     } else {
         prev = curr;
     }
   }
-  //recurse on subloops
-  for (Loop *L : Loops) {
-    const std::vector<Loop*> &SubLoops = L->getSubLoops();
-
-    if (SubLoops.size() >= 2)
-      changed |= runOnLoops(F, FAM, L->getSubLoops());
-  }
 
   return changed;
 }
 
-Loop* LoopFusionOpt::optimizeLoop(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr) {
-  auto &SE = FAM.getResult<ScalarEvolutionAnalysis>(F);
+Loop* LoopFusionOpt::fuseLoops(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr) {
+  ScalarEvolution &SE = FAM.getResult<ScalarEvolutionAnalysis>(F);
   auto &LI = FAM.getResult<LoopAnalysis>(F);
 
-  auto *prevLatch = prev->getLoopLatch();
-  auto *prevBodyEntry = prevLatch->getSinglePredecessor();
-  auto *prevHeader = prev->getHeader();
   auto *prevPreheader = prev->getLoopPreheader();
-  auto *prevExit = prev->getExitBlock();
+  auto *prevLatch = prev->getLoopLatch();
+  auto *prevBody = prevLatch->getSinglePredecessor();
+  auto *prevHeader = prevPreheader->getSingleSuccessor();
   auto *prevGuard = prev->getLoopGuardBranch();
+  auto *prevExit = prev->getExitBlock();
 
-  auto *currLatch = curr->getLoopLatch();
-  auto *currBodyEntry = currLatch->getSinglePredecessor();
-  auto *currHeader = curr->getHeader();
   auto *currPreheader = curr->getLoopPreheader();
+  auto *currLatch = curr->getLoopLatch();
+  auto *currBody = currLatch->getSinglePredecessor();
+  auto *currHeader = currPreheader->getSingleSuccessor();
   auto *currExit = curr->getExitBlock();
+  auto *currGuard = curr->getLoopGuardBranch();
 
   // Replace Induction Variable
-  auto *prevIV = prev->getCanonicalInductionVariable();
-  auto *currIV = curr->getCanonicalInductionVariable();
-
+  auto *prevIV = prev->getInductionVariable(SE);
+  auto *currIV = curr->getInductionVariable(SE);
   currIV->replaceAllUsesWith(prevIV);
   currIV->eraseFromParent();
 
-  // Move PHIs from currHeader to prevHeader
+  // Adjust PHInodes
+  auto isLCSSAPhi = [](llvm::PHINode *PHI, llvm::Loop *L) -> bool {
+    if (L->contains(PHI->getParent())) return false;
+
+    for (unsigned i = 0, e = PHI->getNumIncomingValues(); i < e; ++i) {
+      BasicBlock *Pred = PHI->getIncomingBlock(i);
+      if (!L->contains(Pred))
+        return false;
+    }
+
+    return true; // It's an LCSSA PHI for loop L
+  };
+  currHeader->replacePhiUsesWith(currLatch, prevLatch);
+  currHeader->replacePhiUsesWith(currPreheader, prevPreheader);
+  currPreheader->replacePhiUsesWith(currPreheader->getSinglePredecessor(), prevBody);
+  currExit->replacePhiUsesWith(currLatch, prevLatch);
+
   SmallVector<PHINode *, 8> currHeaderPHIs;
   for (auto &I : *currHeader) {
     if (auto *PHI = dyn_cast<PHINode>(&I)) {
       currHeaderPHIs.push_back(PHI);
     }
   }
-
+  SmallVector<PHINode *, 8> prevHeaderPHIs;
+  for (auto &I : *prevHeader) {
+    if (auto *PHI = dyn_cast<PHINode>(&I)) {
+      prevHeaderPHIs.push_back(PHI);
+    }
+  }
   auto *insertionPoint = prevHeader->getFirstNonPHI();
   for (auto *PHI : currHeaderPHIs) {
-
     // handle when PHI depends on a PHI from the previous loop
     Value *in0 = PHI->getIncomingValue(0);
     Value *in1 = PHI->getIncomingValue(1);
 
-    if (auto *prevPHI = dyn_cast<PHINode>(in0)) {
-      if (prevHeader == prevPHI->getParent()) {
-        auto prevInstruction = dyn_cast<Instruction>(prevPHI->getIncomingValue(1));
-        auto userInstruction = dyn_cast<Instruction>(in1);
-        userInstruction->setOperand(0, prevInstruction);
-        prevPHI->setIncomingValue(1, in1);
-        PHI->replaceAllUsesWith(prevPHI);
+    if (auto *lcssaPHI = dyn_cast<PHINode>(in0)) {
+      if (prevExit == lcssaPHI->getParent() && isLCSSAPhi(lcssaPHI, prev)) {
+        auto lcssaValue = lcssaPHI->getIncomingValue(0);
+
+        for (PHINode *prevPHI : prevHeaderPHIs){
+          if (prevPHI->getIncomingValue(1) == lcssaValue)
+            prevPHI->setIncomingValue(1, in1);
+        }
+
+        PHI->replaceAllUsesWith(lcssaValue);
         PHI->eraseFromParent();
+        lcssaPHI->eraseFromParent();
         
         continue;
       }
     }
 
     PHI->moveBefore(insertionPoint);
-    for (unsigned i = 0, e = PHI->getNumIncomingValues(); i != e; ++i) {
-      if (PHI->getIncomingBlock(i) == currPreheader) {
-        PHI->setIncomingBlock(i, prevPreheader);
-      } else if (PHI->getIncomingBlock(i) == currLatch) {
-        PHI->setIncomingBlock(i, prevLatch);
-      }
+  }
+
+  // move lcssa instruction form prevexit to currexit
+  Instruction *movePoint = currExit->getFirstNonPHI();
+  SmallVector<PHINode *> lcssaToMove;
+  for (Instruction &I : *prevExit) {
+    errs() << "Moving phi: " << I << "\n";
+    if (auto *phi = dyn_cast<PHINode>(&I)) {
+      lcssaToMove.push_back(phi);
+      phi->setIncomingBlock(0, prevLatch);
+      errs() << "Moving phi: " << *phi << "\n";
     }
+  }
+
+  for (PHINode *phi : lcssaToMove) phi->moveBefore(movePoint);
+
+  if (prevGuard && currGuard) {
+    prevGuard->setSuccessor(1, currExit->getSingleSuccessor());
+
+    // // Move instructions from currGuard to currExit's successor
+    // BasicBlock *guardDest = currExit->getSingleSuccessor();
+    // Instruction *insertionPoint = guardDest->getFirstNonPHI();
+
+    // currGuard->getParent()->replacePhiUsesWith(prevExit, currExit);
+    // SmallVector<Instruction *> toMove;
+    // for (Instruction &I : *currGuard->getParent()) {
+    //   if (!I.isTerminator() )
+    //     toMove.push_back(&I);
+    // }
+
+    // for (Instruction *inst : toMove) inst->moveBefore(insertionPoint);
   }
 
   // Redirect control flow
-  prevHeader->getTerminator()->replaceSuccessorWith(prevExit, currExit);
-  prevBodyEntry->getTerminator()->replaceSuccessorWith(prevLatch, currBodyEntry);
-  currBodyEntry->getTerminator()->replaceSuccessorWith(currLatch, prevLatch);
-  currHeader->getTerminator()->replaceSuccessorWith(currBodyEntry, currLatch);
-  if (prevGuard) {
-    prevGuard->setSuccessor(1, currExit);
-  }
+  prevLatch->getTerminator()->setSuccessor(1, currExit);
+  prevBody->getTerminator()->replaceSuccessorWith(prevLatch, currPreheader);
+  currBody->getTerminator()->replaceSuccessorWith(currLatch, prevLatch);
+  currLatch->getTerminator()->replaceSuccessorWith(currExit, currLatch); // loop to itself (BB to be removed)
 
-  // move curr body blocks before prev latch
-  for (auto *BB : curr->blocks()) {
-    if (BB == currHeader || BB == currLatch || BB == currExit)
-      continue;
-
-    BB->moveBefore(prevLatch);
-  }
-
-  // Update loop structure
-  prev->addBasicBlockToLoop(currBodyEntry, LI);
-  curr->removeBlockFromLoop(currBodyEntry);
-  LI.erase(curr);
+  // clean up and move curr blocks
   removeUnreachableBlocks(F);
+  LI.erase(curr);
+
+  SmallVector<BasicBlock*> currBlocks;
+  for (BasicBlock *bb : curr->getBlocks()) {
+    if (bb != currLatch)
+      currBlocks.push_back(bb);
+  }
+  currBlocks.push_back(currPreheader);
+  currBlocks.push_back(currHeader);
+
+  for (auto *bb : currBlocks){
+    prev->addBasicBlockToLoop(bb, LI);
+    bb->moveBefore(prevLatch);
+  }
 
   return prev;
-}
-
-
-SetVector<Instruction*> getBodyInstructions(Loop *L){
-  SetVector<Instruction*> instructions;
-  for (auto *BB : L->blocks()) {
-    for (Instruction &I : *BB) {
-      instructions.insert(&I);
-    }
-  }
-  return instructions;
 }
 
 bool LoopFusionOpt::isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr){
@@ -148,7 +178,7 @@ bool LoopFusionOpt::isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loo
 
     auto nextEntryBB = curr->isGuarded() ?
         curr->getLoopGuardBranch()->getParent()
-        : curr->getLoopPreheader();;
+        : curr->getLoopPreheader();
 
     return prevExitBB == nextEntryBB;
 };
@@ -169,8 +199,8 @@ bool LoopFusionOpt::isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loo
     DominatorTree &DT = FAM.getResult<DominatorTreeAnalysis>(F);
     PostDominatorTree &PDT = FAM.getResult<PostDominatorTreeAnalysis>(F);
 
-    BasicBlock *H0 = prev->getLoopPreheader();
-    BasicBlock *H1 = curr->getLoopPreheader();
+    BasicBlock *H0 = prev->getHeader();
+    BasicBlock *H1 = curr->getHeader();
 
     // If both loops are guarded, check if their guard conditions are the same
     bool condEq = true;
@@ -210,7 +240,6 @@ bool LoopFusionOpt::isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loo
     // }
     return true;
   };
-
   return isAdjacent() && hasSameLoopTripCount() && isControlFlowEq() && hasNotDependencies();
 }
 

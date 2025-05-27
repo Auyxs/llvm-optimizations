@@ -27,7 +27,7 @@ class LoopFusionOpt : public PassInfoMixin<LoopFusionOpt> {
         PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM);
         bool runOnLoops(Function &F, FunctionAnalysisManager &FAM, const std::vector<Loop*> &Loops);
         bool isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr);
-        Loop* optimizeLoop(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr);
+        Loop* fuseLoops(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr);
         
     };
 }
