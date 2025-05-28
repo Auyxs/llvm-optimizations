@@ -31,11 +31,20 @@ bool LoopFusionOpt::runOnLoops(Function &F, FunctionAnalysisManager &FAM, const 
 
   return changed;
 }
+void deleteBlock(BasicBlock* block){
+  while (!block->empty()) {
+    Instruction &inst = block->back();
+    inst.eraseFromParent();
+  }
+
+  block->eraseFromParent();
+}
 
 Loop* LoopFusionOpt::fuseLoops(Function &F, FunctionAnalysisManager &FAM, Loop *prev, Loop *curr) {
   ScalarEvolution &SE = FAM.getResult<ScalarEvolutionAnalysis>(F);
   auto &LI = FAM.getResult<LoopAnalysis>(F);
 
+  // === Fetch loop components ===
   auto *prevPreheader = prev->getLoopPreheader();
   auto *prevLatch = prev->getLoopLatch();
   auto *prevBody = prevLatch->getSinglePredecessor();
@@ -50,117 +59,114 @@ Loop* LoopFusionOpt::fuseLoops(Function &F, FunctionAnalysisManager &FAM, Loop *
   auto *currExit = curr->getExitBlock();
   auto *currGuard = curr->getLoopGuardBranch();
 
-  // Replace Induction Variable
+  // === Replace induction variable ===
   auto *prevIV = prev->getInductionVariable(SE);
   auto *currIV = curr->getInductionVariable(SE);
   currIV->replaceAllUsesWith(prevIV);
   currIV->eraseFromParent();
 
-  // Adjust PHInodes
-  auto isLCSSAPhi = [](llvm::PHINode *PHI, llvm::Loop *L) -> bool {
+  // === Adjust PHI nodes ===
+  auto isLCSSAPhi = [](PHINode *PHI, Loop *L) {
     if (L->contains(PHI->getParent())) return false;
-
-    for (unsigned i = 0, e = PHI->getNumIncomingValues(); i < e; ++i) {
-      BasicBlock *Pred = PHI->getIncomingBlock(i);
-      if (!L->contains(Pred))
+    for (unsigned i = 0, e = PHI->getNumIncomingValues(); i < e; ++i)
+      if (!L->contains(PHI->getIncomingBlock(i)))
         return false;
-    }
-
-    return true; // It's an LCSSA PHI for loop L
+    return true;
   };
+
   currHeader->replacePhiUsesWith(currLatch, prevLatch);
   currHeader->replacePhiUsesWith(currPreheader, prevPreheader);
   currPreheader->replacePhiUsesWith(currPreheader->getSinglePredecessor(), prevBody);
   currExit->replacePhiUsesWith(currLatch, prevLatch);
 
   SmallVector<PHINode *, 8> currHeaderPHIs;
-  for (auto &I : *currHeader) {
-    if (auto *PHI = dyn_cast<PHINode>(&I)) {
+  for (auto &I : *currHeader)
+    if (auto *PHI = dyn_cast<PHINode>(&I))
       currHeaderPHIs.push_back(PHI);
-    }
-  }
+
   SmallVector<PHINode *, 8> prevHeaderPHIs;
-  for (auto &I : *prevHeader) {
-    if (auto *PHI = dyn_cast<PHINode>(&I)) {
+  for (auto &I : *prevHeader)
+    if (auto *PHI = dyn_cast<PHINode>(&I))
       prevHeaderPHIs.push_back(PHI);
-    }
-  }
-  auto *insertionPoint = prevHeader->getFirstNonPHI();
+
+  Instruction *insertBefore = prevHeader->getFirstNonPHI();
   for (auto *PHI : currHeaderPHIs) {
-    // handle when PHI depends on a PHI from the previous loop
     Value *in0 = PHI->getIncomingValue(0);
     Value *in1 = PHI->getIncomingValue(1);
 
     if (auto *lcssaPHI = dyn_cast<PHINode>(in0)) {
       if (prevExit == lcssaPHI->getParent() && isLCSSAPhi(lcssaPHI, prev)) {
-        auto lcssaValue = lcssaPHI->getIncomingValue(0);
+        Value *lcssaValue = lcssaPHI->getIncomingValue(0);
 
-        for (PHINode *prevPHI : prevHeaderPHIs){
+        for (auto *prevPHI : prevHeaderPHIs)
           if (prevPHI->getIncomingValue(1) == lcssaValue)
             prevPHI->setIncomingValue(1, in1);
-        }
 
         PHI->replaceAllUsesWith(lcssaValue);
         PHI->eraseFromParent();
         lcssaPHI->eraseFromParent();
-        
         continue;
       }
     }
 
-    PHI->moveBefore(insertionPoint);
+    PHI->moveBefore(insertBefore);
   }
 
-  // move lcssa instruction form prevexit to currexit
+  // === Move LCSSA phis from prevExit to currExit ===
   Instruction *movePoint = currExit->getFirstNonPHI();
   SmallVector<PHINode *> lcssaToMove;
-  for (Instruction &I : *prevExit) {
-    errs() << "Moving phi: " << I << "\n";
+  for (Instruction &I : *prevExit)
     if (auto *phi = dyn_cast<PHINode>(&I)) {
-      lcssaToMove.push_back(phi);
       phi->setIncomingBlock(0, prevLatch);
-      errs() << "Moving phi: " << *phi << "\n";
+      lcssaToMove.push_back(phi);
     }
-  }
 
-  for (PHINode *phi : lcssaToMove) phi->moveBefore(movePoint);
+  for (auto *phi : lcssaToMove)
+    phi->moveBefore(movePoint);
 
+  // === Handle guards and exits ===
   if (prevGuard && currGuard) {
-    prevGuard->setSuccessor(1, currExit->getSingleSuccessor());
+    BasicBlock *guardDest = currExit->getSingleSuccessor();
 
-    // // Move instructions from currGuard to currExit's successor
-    // BasicBlock *guardDest = currExit->getSingleSuccessor();
-    // Instruction *insertionPoint = guardDest->getFirstNonPHI();
+    prevGuard->setSuccessor(1, guardDest);
+    guardDest->replacePhiUsesWith(currGuard->getParent(), prevGuard->getParent());
 
-    // currGuard->getParent()->replacePhiUsesWith(prevExit, currExit);
-    // SmallVector<Instruction *> toMove;
-    // for (Instruction &I : *currGuard->getParent()) {
-    //   if (!I.isTerminator() )
-    //     toMove.push_back(&I);
-    // }
+    currGuard->replaceSuccessorWith(guardDest, currGuard->getParent());
+    prevExit->getTerminator()->setSuccessor(0, prevExit); 
 
-    // for (Instruction *inst : toMove) inst->moveBefore(insertionPoint);
+    Instruction *insertPt = guardDest->getFirstNonPHI();
+    SmallVector<Instruction *> toMove;
+
+    for (Instruction &I : *currGuard->getParent())
+      if (!I.isTerminator() && &I != currGuard->getCondition())
+        toMove.push_back(&I);
+
+    for (Instruction *inst : toMove)
+      inst->moveBefore(insertPt);
+
+    guardDest->replacePhiUsesWith(prevExit, currExit);
+
+    deleteBlock(currGuard->getParent());
+    deleteBlock(prevExit);
   }
 
-  // Redirect control flow
+  // === Redirect control flow ===
   prevLatch->getTerminator()->setSuccessor(1, currExit);
   prevBody->getTerminator()->replaceSuccessorWith(prevLatch, currPreheader);
   currBody->getTerminator()->replaceSuccessorWith(currLatch, prevLatch);
-  currLatch->getTerminator()->replaceSuccessorWith(currExit, currLatch); // loop to itself (BB to be removed)
+  currLatch->getTerminator()->replaceSuccessorWith(currExit, currLatch);
+  deleteBlock(currLatch);
 
-  // clean up and move curr blocks
-  removeUnreachableBlocks(F);
-  LI.erase(curr);
-
-  SmallVector<BasicBlock*> currBlocks;
-  for (BasicBlock *bb : curr->getBlocks()) {
+  // === Merge curr blocks into prev loop ===
+  SmallVector<BasicBlock *> currBlocks;
+  for (auto *bb : curr->getBlocks())
     if (bb != currLatch)
       currBlocks.push_back(bb);
-  }
+
   currBlocks.push_back(currPreheader);
   currBlocks.push_back(currHeader);
 
-  for (auto *bb : currBlocks){
+  for (auto *bb : currBlocks) {
     prev->addBasicBlockToLoop(bb, LI);
     bb->moveBefore(prevLatch);
   }
