@@ -20,6 +20,8 @@
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+
 namespace llvm {
 
 class LoopFusionOpt : public PassInfoMixin<LoopFusionOpt> {

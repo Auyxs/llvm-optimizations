@@ -228,24 +228,62 @@ bool LoopFusionOpt::isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loo
 
     return DT.dominates(H0, H1) && PDT.dominates(H1, H0) && condEq;
   };
+  
+  auto getInstructionPointer = [&](Instruction *Inst) -> Value * {
+    if (auto *storeInst = dyn_cast<StoreInst>(Inst)) {
+      return storeInst->getPointerOperand();
+    }
+
+    if (auto *loadInst = dyn_cast<LoadInst>(Inst)) {
+      return loadInst->getPointerOperand();
+    }
+
+    return nullptr;
+  };
 
   auto hasNotDependencies = [&]() -> bool {
-    // auto &DI = FAM.getResult<DependenceAnalysis>(F);
+    auto &DI = FAM.getResult<DependenceAnalysis>(F);
+    AliasAnalysis &AA = FAM.getResult<AAManager>(F);
+    ScalarEvolution &SE = FAM.getResult<ScalarEvolutionAnalysis>(F);
+    const DataLayout &DL = F.getParent()->getDataLayout();
+      for (auto *BB : prev->getBlocks()) {
+        for (auto &I : *BB) {
+          for (auto *BB2 : curr->getBlocks()) {
+            for (auto &I2 : *BB2) {
+              if (auto Dep = DI.depends(&I, &I2, true)) {
 
-    // for (auto *BB : prev->getBlocks()) {
-    //   for (auto &I : *BB) {
-    //     for (auto *BB2 : curr->getBlocks()) {
-    //       for (auto &I2 : *BB2) {
-    //         if (DI.depends(&I, &I2, true)) {
-    //           errs() << "Dependency " << I << I2 << "\n";
-    //           return false;
-    //         }
-    //       }
-    //     }
-    //   }
-    // }
+                outs() << "Istruzioniii: " << I << " " << I2 << "\n";
+                Value *Pointer1 = getInstructionPointer(&I);
+                Value *Pointer2 = getInstructionPointer(&I2);
+                const SCEV *Expr1 = SE.getSCEV(Pointer1);
+                const SCEV *Expr2 = SE.getSCEV(Pointer2);
+                const SCEVAddRecExpr *AR1 = dyn_cast<SCEVAddRecExpr>(Expr1);
+                const SCEVAddRecExpr *AR2 = dyn_cast<SCEVAddRecExpr>(Expr2);
+
+                if(AR1 && AR2 && (AR1->getStepRecurrence(SE) == AR2->getStepRecurrence(SE))){
+                  const SCEV *Dist = SE.getMinusSCEV(AR1->getStart(), AR2->getStart());
+
+                  if(auto *ConstDist = dyn_cast<SCEVConstant>(Dist)){
+                    const APInt &ByteOffset = ConstDist->getAPInt();
+
+                    Type *ElemTy = isa<GetElementPtrInst>(Pointer1) ?
+                    cast<GetElementPtrInst>(Pointer1)->getResultElementType()
+                    : cast<GetElementPtrInst>(Pointer2)->getResultElementType();
+
+                    uint64_t ElemSize = DL.getTypeAllocSize(ElemTy);
+                    int64_t ElementOffset = ByteOffset.getSExtValue() / (int64_t)ElemSize;
+                    outs() << "Distanza: " << ElementOffset << "\n";
+                    if(ElementOffset < 0) return false;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     return true;
   };
+
   return isAdjacent() && hasSameLoopTripCount() && isControlFlowEq() && hasNotDependencies();
 }
 
