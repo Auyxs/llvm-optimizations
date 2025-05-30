@@ -141,9 +141,7 @@ Loop* LoopFusionOpt::fuseLoops(Function &F, FunctionAnalysisManager &FAM, Loop *
       if (!I.isTerminator() && &I != currGuard->getCondition())
         toMove.push_back(&I);
 
-    for (Instruction *inst : toMove)
-      inst->moveBefore(insertPt);
-
+    for (Instruction *inst : toMove) inst->moveBefore(insertPt);
     guardDest->replacePhiUsesWith(prevExit, currExit);
 
     deleteBlock(currGuard->getParent());
@@ -159,10 +157,6 @@ Loop* LoopFusionOpt::fuseLoops(Function &F, FunctionAnalysisManager &FAM, Loop *
 
   // === Merge curr blocks into prev loop ===
   SmallVector<BasicBlock *> currBlocks;
-  for (auto *bb : curr->getBlocks())
-    if (bb != currLatch)
-      currBlocks.push_back(bb);
-
   currBlocks.push_back(currPreheader);
   currBlocks.push_back(currHeader);
 
