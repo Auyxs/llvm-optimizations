@@ -1,42 +1,42 @@
-; ModuleID = 'test/bc/tests.opt.bc'
+; ModuleID = 'test/bc/tests.pre.bc'
 source_filename = "test/cpp/tests.cpp"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-pc-linux-gnu"
 
 ; Function Attrs: mustprogress noinline nounwind uwtable
 define dso_local noundef i32 @_Z5test1i(i32 noundef %0) #0 {
-  %2 = mul nsw i32 %0, 2
-  br label %3
+  br label %2
 
-3:                                                ; preds = %1, %4
+2:                                                ; preds = %1, %4
   %.02 = phi i32 [ 0, %1 ], [ %5, %4 ]
+  %3 = mul nsw i32 %0, 2
   br label %4
 
-4:                                                ; preds = %3
+4:                                                ; preds = %2
   %5 = add nsw i32 %.02, 1
   %6 = icmp slt i32 %5, 20
-  br i1 %6, label %3, label %7, !llvm.loop !6
+  br i1 %6, label %2, label %7, !llvm.loop !6
 
 7:                                                ; preds = %4
-  %.01.lcssa = phi i32 [ %2, %4 ]
+  %.01.lcssa = phi i32 [ %3, %4 ]
   ret i32 %.01.lcssa
 }
 
 ; Function Attrs: mustprogress noinline nounwind uwtable
 define dso_local noundef i32 @_Z5test2i(i32 noundef %0) #0 {
-  %2 = mul nsw i32 %0, 2
-  %3 = add nsw i32 %2, 1
-  %4 = mul nsw i32 %3, 2
-  br label %5
+  br label %2
 
-5:                                                ; preds = %1, %6
+2:                                                ; preds = %1, %6
   %.01 = phi i32 [ 0, %1 ], [ %7, %6 ]
+  %3 = mul nsw i32 %0, 2
+  %4 = add nsw i32 %3, 1
+  %5 = mul nsw i32 %4, 2
   br label %6
 
-6:                                                ; preds = %5
+6:                                                ; preds = %2
   %7 = add nsw i32 %.01, 1
   %8 = icmp slt i32 %7, 20
-  br i1 %8, label %5, label %9, !llvm.loop !8
+  br i1 %8, label %2, label %9, !llvm.loop !8
 
 9:                                                ; preds = %6
   ret i32 0

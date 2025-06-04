@@ -17,8 +17,7 @@ namespace llvm {
 
 class LocalOpts : public PassInfoMixin<LocalOpts> {
     public:
-        PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
-        static bool runOnFunction(Function &F);
+        PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM);
         static bool runOnBasicBlock(BasicBlock &B);
         static bool AlgebraicIdentityOpt(Instruction &I);
         static bool StrengthReductionOpt(Instruction &I);

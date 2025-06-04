@@ -1,41 +1,39 @@
 // MOVABLE: not dead but dominates exits and uses
-int test1(int n, bool cond) {
+int test1(int n) {
     int result = 0;
     int temp = 0;
 
-    while (true) {
+    for (int x = 0; x < 20; x++)  {
         temp = n * 2; // I to consider
-        if (cond) break;
     }
 
     return temp; // used after loop
 }
 
 // MOVABLE: all 3 instructions
-void test2(int n, bool cond) {
+int test2(int n) {
     int a, b;
     int temp = 0;
 
-    while (true) {
+    for (int x = 0; x < 20; x++)  {
         a = n * 2;
         b = a + 1;
         temp = b * 2; 
-
-        if (cond) break;
     }
+    return 0;
 }
 
 
 // NOT MOVABLE: dead after but does not dominate all uses (also not defined only once)
 void test3(bool cond){
     int result = 0, x = 0, a = 10;
+    int temp;
 
     for (int x = 0; x < 20; x++)  {
-        int temp;
         result += temp; // I to consider
 
         if (cond) 
-            temp = a * 2; // Defined only in one branch
+            temp = a * 2; // Defined only in one branch  
     }
 }
 

@@ -13,9 +13,9 @@ define dso_local void @_Z13test_SRPowOf2i(i32 noundef %0) #0 {
 ; Function Attrs: mustprogress noinline nounwind uwtable
 define dso_local void @_Z15test_advancedSRi(i32 noundef %0) #0 {
   %2 = shl i32 %0, 4
-  %3 = add i32 %2, %0
+  %3 = add i32 %2, 1
   %4 = shl i32 %0, 4
-  %5 = sub i32 %4, %0
+  %5 = sub i32 %4, 1
   ret void
 }
 

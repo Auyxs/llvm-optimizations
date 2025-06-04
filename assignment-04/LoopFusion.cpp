@@ -150,14 +150,14 @@ Loop* LoopFusionOpt::fuseLoops(Function &F, FunctionAnalysisManager &FAM, Loop *
 
   // === Redirect control flow ===
   prevLatch->getTerminator()->setSuccessor(1, currExit);
-  prevBody->getTerminator()->replaceSuccessorWith(prevLatch, currPreheader);
+  prevBody->getTerminator()->replaceSuccessorWith(prevLatch, currHeader);
   currBody->getTerminator()->replaceSuccessorWith(currLatch, prevLatch);
   currLatch->getTerminator()->replaceSuccessorWith(currExit, currLatch);
   deleteBlock(currLatch);
+  deleteBlock(currPreheader);
 
   // === Merge curr blocks into prev loop ===
   SmallVector<BasicBlock *> currBlocks;
-  currBlocks.push_back(currPreheader);
   currBlocks.push_back(currHeader);
 
   for (auto *bb : currBlocks) {
@@ -237,9 +237,9 @@ bool LoopFusionOpt::isOptimizable(Function &F, FunctionAnalysisManager &FAM, Loo
 
   auto hasNotDependencies = [&]() -> bool {
     auto &DI = FAM.getResult<DependenceAnalysis>(F);
-    AliasAnalysis &AA = FAM.getResult<AAManager>(F);
     ScalarEvolution &SE = FAM.getResult<ScalarEvolutionAnalysis>(F);
     const DataLayout &DL = F.getParent()->getDataLayout();
+    
       for (auto *BB : prev->getBlocks()) {
         for (auto &I : *BB) {
           for (auto *BB2 : curr->getBlocks()) {

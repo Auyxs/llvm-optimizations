@@ -56,23 +56,23 @@ bool LICMopt::runOnLoop(Loop *L, DominatorTree &DT) {
   }
 
   // Check for not moved dependencies 
-  auto hasUnmovedDependencies = [&](Instruction *I) -> bool {
-    for (Value *op : I->operands()) {
-      if (auto *opInst = dyn_cast<Instruction>(op)) {
-        if (L->contains(opInst) && !moved.contains(opInst))
-          return true; // Dependency still inside loop
-      }
-    }
-    return false;
-  };
+  // auto hasUnmovedDependencies = [&](Instruction *I) -> bool {
+  //   for (Value *op : I->operands()) {
+  //     if (auto *opInst = dyn_cast<Instruction>(op)) {
+  //       if (L->contains(opInst) && !moved.contains(opInst))
+  //         return true; // Dependency still inside loop
+  //     }
+  //   }
+  //   return false;
+  // };
 
   // Move instructions
   for (Instruction *I : movable) {
-    if (!hasUnmovedDependencies(I)) {
+    // if (!hasUnmovedDependencies(I)) {
       I->moveBefore(preheader->getTerminator());
       moved.insert(I);
       outs() << "Moved to preheader: " << *I << "\n";
-    }
+    // }
   }
 
   return !moved.empty();
@@ -95,11 +95,6 @@ bool LICMopt::isSafeToMove(Instruction &I, Loop *L, DominatorTree &DT, SmallVect
 
   // Check if instruction will execute before any possible loop exit.
   auto dominatesAllExits = [&](Instruction &I) -> bool {
-    if (ExitBlocks.empty()) {
-      outs() << "No exit blocks for: " << I << "\n";
-      return false;
-    }
-
     for (BasicBlock *Exit : ExitBlocks) {
       if (!DT.dominates(I.getParent(), Exit)) {
         outs() << "NOT dominate exits: " << I << "\n";

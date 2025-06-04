@@ -1,24 +1,14 @@
 #include "LocalOpts.h"
 using namespace llvm;
 
-PreservedAnalyses LocalOpts::run(Module &M, ModuleAnalysisManager &AM) {
-  bool moduleChanged = false;
-
-  for (Function &F : M)   
-    moduleChanged |= runOnFunction(F);
-
-  errs() << (moduleChanged ? "IR modified" : "Nothing modified") << "\n";
-  return moduleChanged ? PreservedAnalyses::none() : PreservedAnalyses::all();
-}
-
-bool LocalOpts::runOnFunction(Function &F) {
+PreservedAnalyses LocalOpts::run(Function &F, FunctionAnalysisManager &FAM) {
   errs() << "\nRunning on function: " << F.getName() << "\n";
   bool functionChanged = false;
 
   for (auto &BB : F)
     functionChanged |= runOnBasicBlock(BB);
 
-  return functionChanged;
+  return functionChanged ? PreservedAnalyses::none() : PreservedAnalyses::all();
 }
 
 bool LocalOpts::runOnBasicBlock(BasicBlock &B) {
@@ -148,7 +138,7 @@ bool LocalOpts::AdvancedMulSROpt(Instruction &I) {
   if (!isValid) return false;
 
   auto *ShiftInstr = BinaryOperator::Create(Instruction::Shl, LHS, ConstantInt::get(CI->getType(), ShiftValue));
-  auto *AdjustInstr = BinaryOperator::Create(adjustOp, ShiftInstr, LHS);
+  auto *AdjustInstr = BinaryOperator::Create(adjustOp, ShiftInstr, ConstantInt::get(CI->getType(), 1));
 
   errs() << "Adv Strength Reduction: " << I << "\n";
   ShiftInstr->insertBefore(&I);
@@ -184,7 +174,7 @@ bool LocalOpts::MultiInstructionOpt(Instruction &I) {
 
   auto operandsPair1 = getOperands(I);
   auto *UsedInstr = dyn_cast<Instruction>(operandsPair1.first);
-  if (!UsedInstr || !UsedInstr->isBinaryOp()) return false;
+  if (!UsedInstr || !UsedInstr->isBinaryOp() || !operandsPair1.second) return false;
 
   auto operandsPair2 = getOperands(*UsedInstr);
   auto opCode2 = UsedInstr->getOpcode();
@@ -231,15 +221,16 @@ PassPluginLibraryInfo getLocalOptPluginInfo() {
     "v1.0",
     [](PassBuilder &PB) {
       PB.registerPipelineParsingCallback(
-        [](StringRef Name, ModulePassManager &MPM,
-          ArrayRef<PassBuilder::PipelineElement>) {
+        [](StringRef Name, FunctionPassManager &FPM,
+           ArrayRef<PassBuilder::PipelineElement>) {
           if (Name == "local-opts") {
-            MPM.addPass(LocalOpts());
+            FPM.addPass(LocalOpts());
             return true;
           }
           return false;
-      });
-    }};
+        });
+    }
+  };
 }
 
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo

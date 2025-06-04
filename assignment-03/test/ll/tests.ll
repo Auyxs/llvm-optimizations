@@ -4,45 +4,48 @@ target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:
 target triple = "x86_64-pc-linux-gnu"
 
 ; Function Attrs: mustprogress noinline nounwind uwtable
-define dso_local noundef i32 @_Z5test1ib(i32 noundef %0, i1 noundef zeroext %1) #0 {
-  %3 = zext i1 %1 to i8
-  br label %4
+define dso_local noundef i32 @_Z5test1i(i32 noundef %0) #0 {
+  br label %2
 
-4:                                                ; preds = %8, %2
+2:                                                ; preds = %6, %1
+  %.01 = phi i32 [ 0, %1 ], [ %5, %6 ]
+  %.0 = phi i32 [ 0, %1 ], [ %7, %6 ]
+  %3 = icmp slt i32 %.0, 20
+  br i1 %3, label %4, label %8
+
+4:                                                ; preds = %2
   %5 = mul nsw i32 %0, 2
-  %6 = trunc i8 %3 to i1
-  br i1 %6, label %7, label %8
+  br label %6
 
-7:                                                ; preds = %4
-  br label %9
+6:                                                ; preds = %4
+  %7 = add nsw i32 %.0, 1
+  br label %2, !llvm.loop !6
 
-8:                                                ; preds = %4
-  br label %4, !llvm.loop !6
-
-9:                                                ; preds = %7
-  ret i32 %5
+8:                                                ; preds = %2
+  ret i32 %.01
 }
 
 ; Function Attrs: mustprogress noinline nounwind uwtable
-define dso_local void @_Z5test2ib(i32 noundef %0, i1 noundef zeroext %1) #0 {
-  %3 = zext i1 %1 to i8
-  br label %4
+define dso_local noundef i32 @_Z5test2i(i32 noundef %0) #0 {
+  br label %2
 
-4:                                                ; preds = %10, %2
+2:                                                ; preds = %8, %1
+  %.0 = phi i32 [ 0, %1 ], [ %9, %8 ]
+  %3 = icmp slt i32 %.0, 20
+  br i1 %3, label %4, label %10
+
+4:                                                ; preds = %2
   %5 = mul nsw i32 %0, 2
   %6 = add nsw i32 %5, 1
   %7 = mul nsw i32 %6, 2
-  %8 = trunc i8 %3 to i1
-  br i1 %8, label %9, label %10
+  br label %8
 
-9:                                                ; preds = %4
-  br label %11
+8:                                                ; preds = %4
+  %9 = add nsw i32 %.0, 1
+  br label %2, !llvm.loop !8
 
-10:                                               ; preds = %4
-  br label %4, !llvm.loop !8
-
-11:                                               ; preds = %9
-  ret void
+10:                                               ; preds = %2
+  ret i32 0
 }
 
 ; Function Attrs: mustprogress noinline nounwind uwtable
@@ -51,14 +54,14 @@ define dso_local void @_Z5test3b(i1 noundef zeroext %0) #0 {
   br label %3
 
 3:                                                ; preds = %11, %1
-  %.02 = phi i32 [ 0, %1 ], [ %12, %11 ]
+  %.02 = phi i32 [ undef, %1 ], [ %.1, %11 ]
   %.01 = phi i32 [ 0, %1 ], [ %6, %11 ]
-  %.0 = phi i32 [ undef, %1 ], [ %.1, %11 ]
-  %4 = icmp slt i32 %.02, 20
+  %.0 = phi i32 [ 0, %1 ], [ %12, %11 ]
+  %4 = icmp slt i32 %.0, 20
   br i1 %4, label %5, label %13
 
 5:                                                ; preds = %3
-  %6 = add nsw i32 %.01, %.0
+  %6 = add nsw i32 %.01, %.02
   %7 = trunc i8 %2 to i1
   br i1 %7, label %8, label %10
 
@@ -67,11 +70,11 @@ define dso_local void @_Z5test3b(i1 noundef zeroext %0) #0 {
   br label %10
 
 10:                                               ; preds = %8, %5
-  %.1 = phi i32 [ %9, %8 ], [ %.0, %5 ]
+  %.1 = phi i32 [ %9, %8 ], [ %.02, %5 ]
   br label %11
 
 11:                                               ; preds = %10
-  %12 = add nsw i32 %.02, 1
+  %12 = add nsw i32 %.0, 1
   br label %3, !llvm.loop !9
 
 13:                                               ; preds = %3

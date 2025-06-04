@@ -16,12 +16,9 @@ define dso_local noundef i32 @_Z11bothGuardediii(i32 noundef %0, i32 noundef %1,
   %.031 = phi i32 [ 0, %.lr.ph ], [ %6, %9 ]
   %.023 = phi i32 [ 0, %.lr.ph ], [ %8, %9 ]
   %6 = add nsw i32 %.031, %0
-  br label %.lr.ph6
-
-.lr.ph6:                                          ; preds = %5
   br label %7
 
-7:                                                ; preds = %.lr.ph6
+7:                                                ; preds = %5
   %8 = add nsw i32 %.023, %1
   br label %9
 
@@ -46,11 +43,11 @@ define dso_local noundef i32 @_Z11bothGuardediii(i32 noundef %0, i32 noundef %1,
 define dso_local noundef i32 @_Z14BothNotGuardedv() #0 {
   br label %1
 
-1:                                                ; preds = %0, %11
-  %.06 = phi i32 [ 0, %0 ], [ %9, %11 ]
-  %.013 = phi i32 [ 0, %0 ], [ %10, %11 ]
-  %.032 = phi i32 [ 0, %0 ], [ %5, %11 ]
-  %.041 = phi i32 [ 1, %0 ], [ %12, %11 ]
+1:                                                ; preds = %0, %10
+  %.06 = phi i32 [ 0, %0 ], [ %8, %10 ]
+  %.013 = phi i32 [ 0, %0 ], [ %9, %10 ]
+  %.032 = phi i32 [ 0, %0 ], [ %5, %10 ]
+  %.041 = phi i32 [ 1, %0 ], [ %11, %10 ]
   %2 = add nsw i32 %.06, 1
   %3 = add nsw i32 %.013, 2
   %4 = add nsw i32 %3, 3
@@ -58,62 +55,56 @@ define dso_local noundef i32 @_Z14BothNotGuardedv() #0 {
   br label %6
 
 6:                                                ; preds = %1
-  br label %7
+  %7 = add nsw i32 %2, 10
+  %8 = add nsw i32 %7, 20
+  %9 = add nsw i32 %4, 30
+  br label %10
 
-7:                                                ; preds = %6
-  %8 = add nsw i32 %2, 10
-  %9 = add nsw i32 %8, 20
-  %10 = add nsw i32 %4, 30
-  br label %11
+10:                                               ; preds = %6
+  %11 = add nsw i32 %.041, 1
+  %12 = icmp slt i32 %11, 10
+  br i1 %12, label %1, label %13, !llvm.loop !8
 
-11:                                               ; preds = %7
-  %12 = add nsw i32 %.041, 1
-  %13 = icmp slt i32 %12, 10
-  br i1 %13, label %1, label %14, !llvm.loop !8
-
-14:                                               ; preds = %11
-  %.12.lcssa = phi i32 [ %10, %11 ]
-  %.1.lcssa = phi i32 [ %9, %11 ]
-  %.03.lcssa = phi i32 [ %5, %11 ]
-  %15 = add nsw i32 %.1.lcssa, %.12.lcssa
-  %16 = add nsw i32 %15, %.03.lcssa
-  ret i32 %16
+13:                                               ; preds = %10
+  %.12.lcssa = phi i32 [ %9, %10 ]
+  %.1.lcssa = phi i32 [ %8, %10 ]
+  %.03.lcssa = phi i32 [ %5, %10 ]
+  %14 = add nsw i32 %.1.lcssa, %.12.lcssa
+  %15 = add nsw i32 %14, %.03.lcssa
+  ret i32 %15
 }
 
 ; Function Attrs: mustprogress noinline nounwind uwtable
 define dso_local noundef i32 @_Z12guardedWhileiii(i32 noundef %0, i32 noundef %1, i32 noundef %2) #0 {
   %4 = icmp sgt i32 %0, 0
-  br i1 %4, label %5, label %16
+  br i1 %4, label %5, label %15
 
 5:                                                ; preds = %3
   br label %6
 
-6:                                                ; preds = %13, %5
-  %.01 = phi i32 [ %1, %5 ], [ %7, %13 ]
-  %.0 = phi i32 [ 0, %5 ], [ %8, %13 ]
-  %.02 = phi i32 [ %2, %5 ], [ %11, %13 ]
+6:                                                ; preds = %12, %5
+  %.01 = phi i32 [ %1, %5 ], [ %7, %12 ]
+  %.0 = phi i32 [ 0, %5 ], [ %8, %12 ]
+  %.02 = phi i32 [ %2, %5 ], [ %10, %12 ]
   %7 = add nsw i32 %.01, 5
   %8 = add nsw i32 %.0, 1
   br label %9
 
 9:                                                ; preds = %6
-  br label %10
+  %10 = add nsw i32 %.02, 6
+  %11 = add nsw i32 %.0, 1
+  br label %12
 
-10:                                               ; preds = %9
-  %11 = add nsw i32 %.02, 6
-  %12 = add nsw i32 %.0, 1
-  br label %13
+12:                                               ; preds = %9
+  %13 = icmp slt i32 %8, %0
+  br i1 %13, label %6, label %14, !llvm.loop !9
 
-13:                                               ; preds = %10
-  %14 = icmp slt i32 %8, %0
-  br i1 %14, label %6, label %15, !llvm.loop !9
+14:                                               ; preds = %12
+  %.lcssa = phi i32 [ %10, %12 ]
+  br label %15
 
-15:                                               ; preds = %13
-  %.lcssa = phi i32 [ %11, %13 ]
-  br label %16
-
-16:                                               ; preds = %3, %15
-  %.13 = phi i32 [ %.lcssa, %15 ], [ %2, %3 ]
+15:                                               ; preds = %3, %14
+  %.13 = phi i32 [ %.lcssa, %14 ], [ %2, %3 ]
   ret i32 %.13
 }
 
@@ -131,12 +122,9 @@ define dso_local void @_Z5noDepPiS_i(ptr noundef %0, ptr noundef %1, i32 noundef
   %7 = sext i32 %6 to i64
   %8 = getelementptr inbounds i32, ptr %0, i64 %7
   store i32 0, ptr %8, align 4
-  br label %.lr.ph4
-
-.lr.ph4:                                          ; preds = %5
   br label %9
 
-9:                                                ; preds = %.lr.ph4
+9:                                                ; preds = %5
   %10 = sext i32 %.011 to i64
   %11 = getelementptr inbounds i32, ptr %1, i64 %10
   store i32 2, ptr %11, align 4
